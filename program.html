@@ -104,6 +104,29 @@
                 outline-offset: 2px;
             }
 
+            /* Secondary style: must not compete with the primary "Start game"
+               button that appears below it once loading finishes. */
+            #g2ka-fullscreen {
+                appearance: none;
+                background: transparent;
+                border: 1px solid rgb(58, 58, 68);
+                border-radius: 6px;
+                color: rgb(216, 216, 220);
+                cursor: pointer;
+                font: 600 13px/1 system-ui, sans-serif;
+                padding: 8px 18px;
+            }
+
+            #g2ka-fullscreen:hover {
+                background: rgba(90, 169, 230, 0.14);
+                border-color: rgb(90, 169, 230);
+            }
+
+            #g2ka-fullscreen:focus-visible {
+                outline: 2px solid rgb(216, 216, 220);
+                outline-offset: 2px;
+            }
+
             #g2ka-audio-hint {
                 position: fixed;
                 left: 50%;
@@ -128,6 +151,7 @@
             </div>
             <div id="g2ka-status">Starting&hellip;</div>
             <div id="g2ka-error"></div>
+            <button id="g2ka-fullscreen" type="button">Fullscreen</button>
         </div>
 
         <canvas id="g2ka-canvas" width="1" height="1" tabindex="0"></canvas>
@@ -143,17 +167,17 @@
                 renderScale: 1.0,
                 startButton: true,
                 worklets: {
-                    audio_worklet: "https://cdn.jsdelivr.net/gh/SwankyMan88/Truck-Town@v3/game.audio.worklet.js",
-                    audio_position_worklet: "https://cdn.jsdelivr.net/gh/SwankyMan88/Truck-Town@v3/game.audio.position.worklet.js"
+                    audio_worklet: "https://cdn.jsdelivr.net/gh/SwankyMan88/Truck-Town@v4/game.audio.worklet.js",
+                    audio_position_worklet: "https://cdn.jsdelivr.net/gh/SwankyMan88/Truck-Town@v4/game.audio.position.worklet.js"
                 },
                 scripts: [
-                    "https://cdn.jsdelivr.net/gh/SwankyMan88/Truck-Town@v3/g2ka_audio_position_worklet_0.js",
-                    "https://cdn.jsdelivr.net/gh/SwankyMan88/Truck-Town@v3/g2ka_audio_worklet_0.js",
-                    "https://cdn.jsdelivr.net/gh/SwankyMan88/Truck-Town@v3/g2ka_wasm_0.js",
-                    "https://cdn.jsdelivr.net/gh/SwankyMan88/Truck-Town@v3/g2ka_wasm_1.js",
-                    "https://cdn.jsdelivr.net/gh/SwankyMan88/Truck-Town@v3/g2ka_pck_0.js",
-                    "https://cdn.jsdelivr.net/gh/SwankyMan88/Truck-Town@v3/g2ka_pck_1.js",
-                    "https://cdn.jsdelivr.net/gh/SwankyMan88/Truck-Town@v3/g2ka_engine_0.js"
+                    "https://cdn.jsdelivr.net/gh/SwankyMan88/Truck-Town@v4/g2ka_audio_position_worklet_0.js",
+                    "https://cdn.jsdelivr.net/gh/SwankyMan88/Truck-Town@v4/g2ka_audio_worklet_0.js",
+                    "https://cdn.jsdelivr.net/gh/SwankyMan88/Truck-Town@v4/g2ka_wasm_0.js",
+                    "https://cdn.jsdelivr.net/gh/SwankyMan88/Truck-Town@v4/g2ka_wasm_1.js",
+                    "https://cdn.jsdelivr.net/gh/SwankyMan88/Truck-Town@v4/g2ka_pck_0.js",
+                    "https://cdn.jsdelivr.net/gh/SwankyMan88/Truck-Town@v4/g2ka_pck_1.js",
+                    "https://cdn.jsdelivr.net/gh/SwankyMan88/Truck-Town@v4/g2ka_engine_0.js"
                 ],
                 assets: {
                     audio_position_worklet: {
@@ -181,7 +205,7 @@
                         filename: "Truck Town.pck",
                         virtualName: "game.pck",
                         chunks: 2,
-                        rawSize: 6054912,
+                        rawSize: 6057792,
                         contentType: "application/octet-stream"
                     },
                     engine: {
@@ -194,10 +218,10 @@
                 },
                 fileSizes: {
                     "game.wasm": 37685705,
-                    "game.pck": 6054912
+                    "game.pck": 6057792
                 },
-                totalRawBytes: 44066647,
-                totalWireBytes: 20480976
+                totalRawBytes: 44069527,
+                totalWireBytes: 20483632
             };
 
             // Must run before any getElementById below: if a live-editor re-run
@@ -855,7 +879,8 @@
             function g2kaRemoveStaleWidgets() {
                 var ids = [
                     "g2ka-boot", "g2ka-fill", "g2ka-status", "g2ka-error",
-                    "g2ka-canvas", "g2ka-start", "g2ka-audio-hint"
+                    "g2ka-canvas", "g2ka-start", "g2ka-audio-hint",
+                    "g2ka-fullscreen"
                 ];
                 ids.forEach(function (id) {
                     var all = document.querySelectorAll("#" + id);
@@ -865,8 +890,55 @@
                 });
             }
 
+            // ---------------------------------------------------------------
+            // FULLSCREEN BUTTON
+            //
+            // >>>>>>  PUT YOUR FULLSCREEN CODE IN THE FUNCTION BELOW  <<<<<<
+            //
+            // The button sits on the loading screen and is live from the first
+            // frame, so it can be clicked while the packages are still
+            // downloading. It disappears with the rest of the loading screen
+            // when the game starts.
+            //
+            // Two things worth knowing before you write the body:
+            //
+            //  1. Call requestFullscreen() SYNCHRONOUSLY, right here in this
+            //     function. Browsers only honour the request while the click's
+            //     user activation is still live, so anything moved behind an
+            //     await, a .then() or a setTimeout is rejected with
+            //     "API can only be initiated by a user gesture".
+            //
+            //  2. On Khan Academy the program runs inside an iframe, and
+            //     fullscreen works only if that iframe carries
+            //     allow="fullscreen". Read document.fullscreenEnabled at
+            //     runtime to find out whether it does.
+            // ---------------------------------------------------------------
+            function g2kaOnFullscreenClick() {
+                // YOUR CODE HERE, e.g.:
+                //     document.documentElement.requestFullscreen();
+            }
+
+            function g2kaWireFullscreenButton() {
+                var button = document.getElementById("g2ka-fullscreen");
+
+                if (!button) {
+                    return;
+                }
+
+                button.addEventListener("click", function () {
+                    // Contained so a throw here can never stop the game from
+                    // loading -- fullscreen is a nicety, booting is not.
+                    try {
+                        g2kaOnFullscreenClick();
+                    } catch (e) {
+                        console.warn("godot2ka: the fullscreen handler threw", e);
+                    }
+                });
+            }
+
             function g2kaMain() {
                 g2kaStopPreviousAudio();
+                g2kaWireFullscreenButton();
 
                 g2kaLoadAllChunks()
                     .then(g2kaDecodeAll)
