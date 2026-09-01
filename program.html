@@ -143,17 +143,17 @@
                 renderScale: 1.0,
                 startButton: true,
                 worklets: {
-                    audio_worklet: "https://cdn.jsdelivr.net/gh/SwankyMan88/Truck-Town@v2/game.audio.worklet.js",
-                    audio_position_worklet: "https://cdn.jsdelivr.net/gh/SwankyMan88/Truck-Town@v2/game.audio.position.worklet.js"
+                    audio_worklet: "https://cdn.jsdelivr.net/gh/SwankyMan88/Truck-Town@v3/game.audio.worklet.js",
+                    audio_position_worklet: "https://cdn.jsdelivr.net/gh/SwankyMan88/Truck-Town@v3/game.audio.position.worklet.js"
                 },
                 scripts: [
-                    "https://cdn.jsdelivr.net/gh/SwankyMan88/Truck-Town@v2/g2ka_audio_position_worklet_0.js",
-                    "https://cdn.jsdelivr.net/gh/SwankyMan88/Truck-Town@v2/g2ka_audio_worklet_0.js",
-                    "https://cdn.jsdelivr.net/gh/SwankyMan88/Truck-Town@v2/g2ka_wasm_0.js",
-                    "https://cdn.jsdelivr.net/gh/SwankyMan88/Truck-Town@v2/g2ka_wasm_1.js",
-                    "https://cdn.jsdelivr.net/gh/SwankyMan88/Truck-Town@v2/g2ka_pck_0.js",
-                    "https://cdn.jsdelivr.net/gh/SwankyMan88/Truck-Town@v2/g2ka_pck_1.js",
-                    "https://cdn.jsdelivr.net/gh/SwankyMan88/Truck-Town@v2/g2ka_engine_0.js"
+                    "https://cdn.jsdelivr.net/gh/SwankyMan88/Truck-Town@v3/g2ka_audio_position_worklet_0.js",
+                    "https://cdn.jsdelivr.net/gh/SwankyMan88/Truck-Town@v3/g2ka_audio_worklet_0.js",
+                    "https://cdn.jsdelivr.net/gh/SwankyMan88/Truck-Town@v3/g2ka_wasm_0.js",
+                    "https://cdn.jsdelivr.net/gh/SwankyMan88/Truck-Town@v3/g2ka_wasm_1.js",
+                    "https://cdn.jsdelivr.net/gh/SwankyMan88/Truck-Town@v3/g2ka_pck_0.js",
+                    "https://cdn.jsdelivr.net/gh/SwankyMan88/Truck-Town@v3/g2ka_pck_1.js",
+                    "https://cdn.jsdelivr.net/gh/SwankyMan88/Truck-Town@v3/g2ka_engine_0.js"
                 ],
                 assets: {
                     audio_position_worklet: {
@@ -181,7 +181,7 @@
                         filename: "Truck Town.pck",
                         virtualName: "game.pck",
                         chunks: 2,
-                        rawSize: 6053584,
+                        rawSize: 6054912,
                         contentType: "application/octet-stream"
                     },
                     engine: {
@@ -194,10 +194,10 @@
                 },
                 fileSizes: {
                     "game.wasm": 37685705,
-                    "game.pck": 6053584
+                    "game.pck": 6054912
                 },
-                totalRawBytes: 44065319,
-                totalWireBytes: 20479324
+                totalRawBytes: 44066647,
+                totalWireBytes: 20480976
             };
 
             // Must run before any getElementById below: if a live-editor re-run
@@ -277,8 +277,23 @@
                 return step(0);
             }
 
-            function g2kaBase64ToBytes(b64) {
-                var clean = b64.replace(/[^A-Za-z0-9+/=]/g, "");
+            function g2kaBase64ToBytes(clean) {
+                // No sanitising pass: pack.py emits pure, 4-aligned base64 with
+                // no whitespace, so scanning a 12 MB string for characters that
+                // cannot be there just costs a second copy of it. A corrupted
+                // chunk is still caught downstream by the rawSize check.
+
+                // Native decoder (Chrome 133+, Safari 18.2+, Firefox 133+) is
+                // ~6x faster than the atob + charCodeAt loop below.
+                if (typeof Uint8Array.fromBase64 === "function") {
+                    try {
+                        return Uint8Array.fromBase64(clean);
+                    } catch (e) {
+                        // Malformed input: fall through to the portable path,
+                        // which fails the same way but with the older message.
+                    }
+                }
+
                 var pad = 0;
 
                 if (clean.charAt(clean.length - 1) === "=") {
@@ -298,6 +313,36 @@
                         out[offset + i] = binary.charCodeAt(i);
                     }
                     offset += binary.length;
+                }
+
+                return out;
+            }
+
+            function g2kaChunksToBytes(parts) {
+                // Every chunk is a whole number of base64 quanta (pack.py slices
+                // on a multiple of 4), so each decodes independently. Doing that
+                // avoids materialising the joined string -- on the wasm asset
+                // that alone is a 12 MB allocation held alongside the output.
+                if (parts.length === 1) {
+                    return g2kaBase64ToBytes(parts[0]);
+                }
+
+                var bufs = [];
+                var total = 0;
+
+                for (var i = 0; i < parts.length; i++) {
+                    var buf = g2kaBase64ToBytes(parts[i]);
+                    bufs.push(buf);
+                    total += buf.length;
+                }
+
+                var out = new Uint8Array(total);
+                var offset = 0;
+
+                for (var j = 0; j < bufs.length; j++) {
+                    out.set(bufs[j], offset);
+                    offset += bufs[j].length;
+                    bufs[j] = null;
                 }
 
                 return out;
@@ -348,7 +393,7 @@
                         setTimeout(resolve, 0);
                     })
                         .then(function () {
-                            return g2kaGunzip(g2kaBase64ToBytes(parts.join("")));
+                            return g2kaGunzip(g2kaChunksToBytes(parts.slice(0, meta.chunks)));
                         })
                         .then(function (bytes) {
                             if (bytes.length !== meta.rawSize) {
@@ -407,6 +452,46 @@
                 }
 
                 return Math.max(0.1, Math.min(4, scale));
+            }
+
+            // Godot leaves WebGL's powerPreference at Emscripten's "default",
+            // which on a dual-GPU laptop usually resolves to the integrated
+            // chip -- a large, silent frame-rate loss in a 3D game.
+            //
+            // Rather than pre-creating the context (which would force us to
+            // guess every attribute Godot needs), wrap getContext and merge one
+            // key into whatever Godot itself asks for. Best-effort: if the
+            // prototype is frozen the game simply runs as before.
+            function g2kaPreferDiscreteGpu() {
+                try {
+                    var proto = HTMLCanvasElement.prototype;
+                    var original = proto.getContext;
+
+                    if (typeof original !== "function" || original.__g2kaPatched) {
+                        return;
+                    }
+
+                    function patched(type, attrs) {
+                        if (this === g2kaCanvas && /^webgl/i.test(String(type))) {
+                            var merged = {};
+                            var key;
+
+                            for (key in attrs || {}) {
+                                merged[key] = attrs[key];
+                            }
+
+                            merged.powerPreference = "high-performance";
+                            return original.call(this, type, merged);
+                        }
+
+                        return original.apply(this, arguments);
+                    }
+
+                    patched.__g2kaPatched = true;
+                    proto.getContext = patched;
+                } catch (e) {
+                    console.warn("godot2ka: could not request the high-performance GPU", e);
+                }
             }
 
             function g2kaSizeCanvas() {
@@ -715,6 +800,7 @@
 
                 g2kaInstallHooks();
                 g2kaHookAudioContext();
+                g2kaPreferDiscreteGpu();
 
                 var glue = new TextDecoder("utf-8").decode(G2KA_ASSETS.engine.bytes);
                 glue = g2kaPatchGlue(glue);
